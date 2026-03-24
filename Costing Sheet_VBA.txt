@@ -1,0 +1,283 @@
+Sub OptimizeLinearActuator()
+    '
+    ' Optimizes vendor selection by looking up prices directly from vendor sheets
+    ' Your structure: A=Part_ID, B=Part_Name, C=Selected_Vendor, D=Qty_Per_Product,
+    '                 E=Total_Qty, F=Unit_Price, G=Discount_%, H=Discounted_Price,
+    '                 I=Total_Cost, J=Lead_Time_Days
+    '
+    
+    Dim ws As Worksheet
+    Dim wsVendorA As Worksheet, wsVendorB As Worksheet, wsVendorC As Worksheet
+    Dim lastRow As Long
+    Dim i As Long
+    Dim partID As String
+    Dim totalQty As Double
+    Dim priceA As Double, priceB As Double, priceC As Double
+    Dim discount As Double
+    Dim finalPriceA As Double, finalPriceB As Double, finalPriceC As Double
+    Dim bestVendor As String
+    Dim currentVendor As String
+    Dim lowestPrice As Double
+    Dim originalCost As Double
+    Dim optimizedCost As Double
+    Dim savings As Double
+    Dim partsChanged As Long
+    
+    ' Turn off screen updating for speed
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    
+    ' Set worksheets
+    Set ws = ThisWorkbook.Sheets("Product_LinearActuator")
+    Set wsVendorA = ThisWorkbook.Sheets("Vendor_A")
+    Set wsVendorB = ThisWorkbook.Sheets("Vendor_B")
+    Set wsVendorC = ThisWorkbook.Sheets("Vendor_C")
+    
+    ' Get original total cost (Column I is Total_Cost)
+    Application.Calculate
+    originalCost = Application.WorksheetFunction.Sum(ws.Range("I4:I20"))
+    
+    ' Find last row with data in column A
+    lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
+    
+    partsChanged = 0
+    
+    ' Loop through each part (data starts at row 4)
+    For i = 4 To lastRow
+        ' Check if Part_ID exists
+        If ws.Cells(i, 1).Value <> "" And ws.Cells(i, 1).Value <> "Part_ID" Then
+            partID = ws.Cells(i, 1).Value
+            currentVendor = ws.Cells(i, 3).Value  ' Column C = Selected_Vendor
+            totalQty = ws.Cells(i, 5).Value      ' Column E = Total_Qty
+            
+            ' Look up prices from each vendor sheet
+            On Error Resume Next
+            priceA = Application.WorksheetFunction.VLookup(partID, wsVendorA.Range("A:G"), 3, False)
+            If Err.Number <> 0 Then priceA = 0
+            Err.Clear
+            
+            priceB = Application.WorksheetFunction.VLookup(partID, wsVendorB.Range("A:G"), 3, False)
+            If Err.Number <> 0 Then priceB = 0
+            Err.Clear
+            
+            priceC = Application.WorksheetFunction.VLookup(partID, wsVendorC.Range("A:G"), 3, False)
+            If Err.Number <> 0 Then priceC = 0
+            Err.Clear
+            On Error GoTo 0
+            
+            ' Calculate discount based on total quantity
+            If totalQty >= 25 Then
+                discount = 0.15  ' 15% discount
+            ElseIf totalQty >= 10 Then
+                discount = 0.1   ' 10% discount
+            Else
+                discount = 0     ' No discount
+            End If
+            
+            ' Calculate final prices after discount
+            If priceA > 0 Then
+                finalPriceA = priceA * (1 - discount)
+            Else
+                finalPriceA = 999999  ' Part not available
+            End If
+            
+            If priceB > 0 Then
+                finalPriceB = priceB * (1 - discount)
+            Else
+                finalPriceB = 999999
+            End If
+            
+            If priceC > 0 Then
+                finalPriceC = priceC * (1 - discount)
+            Else
+                finalPriceC = 999999
+            End If
+            
+            ' Find the cheapest vendor
+            lowestPrice = Application.WorksheetFunction.Min(finalPriceA, finalPriceB, finalPriceC)
+            
+            ' Determine which vendor has the lowest price
+            If lowestPrice = finalPriceA And priceA > 0 Then
+                bestVendor = "Vendor_A"
+            ElseIf lowestPrice = finalPriceB And priceB > 0 Then
+                bestVendor = "Vendor_B"
+            ElseIf lowestPrice = finalPriceC And priceC > 0 Then
+                bestVendor = "Vendor_C"
+            Else
+                bestVendor = "Vendor_A"  ' Default
+            End If
+            
+            ' ONLY update Column C (Selected_Vendor) - NOTHING ELSE!
+            If currentVendor <> bestVendor Then
+                ws.Cells(i, 3).Value = bestVendor  ' Column C = Selected_Vendor
+                partsChanged = partsChanged + 1
+            End If
+            
+        End If
+    Next i
+    
+    ' Force recalculation
+    Application.Calculation = xlCalculationAutomatic
+    Application.Calculate
+    DoEvents
+    
+    ' Get optimized total cost
+    optimizedCost = Application.WorksheetFunction.Sum(ws.Range("I4:I20"))
+    savings = originalCost - optimizedCost
+    
+    ' Turn screen updating back on
+    Application.ScreenUpdating = True
+    
+    ' Show results
+    If partsChanged > 0 Then
+        MsgBox "OPTIMIZATION COMPLETE!" & vbCrLf & vbCrLf & _
+               "Vendors Changed: " & partsChanged & " parts" & vbCrLf & vbCrLf & _
+               "Original Cost: $" & Format(originalCost, "#,##0.00") & vbCrLf & _
+               "Optimized Cost: $" & Format(optimizedCost, "#,##0.00") & vbCrLf & vbCrLf & _
+               "TOTAL SAVINGS: $" & Format(savings, "#,##0.00") & _
+               " (" & Format(Abs(savings / originalCost) * 100, "0.0") & "%)", _
+               vbInformation, "Linear Actuator - Optimization Complete"
+    Else
+        MsgBox "Already optimized!" & vbCrLf & vbCrLf & _
+               "All parts are using the cheapest vendor." & vbCrLf & vbCrLf & _
+               "Current Total Cost: $" & Format(optimizedCost, "#,##0.00"), _
+               vbInformation, "Already Optimized"
+    End If
+    
+End Sub
+
+
+Sub ResetLinearActuatorToVendorA()
+    '
+    ' Reset all parts to Vendor A
+    '
+    
+    Dim ws As Worksheet
+    Dim lastRow As Long
+    Dim i As Long
+    Dim partsReset As Long
+    
+    Application.ScreenUpdating = False
+    
+    Set ws = ThisWorkbook.Sheets("Product_LinearActuator")
+    lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
+    
+    partsReset = 0
+    
+    For i = 4 To lastRow
+        If ws.Cells(i, 1).Value <> "" And ws.Cells(i, 1).Value <> "Part_ID" Then
+            ws.Cells(i, 3).Value = "Vendor_A"  ' Column C = Selected_Vendor
+            partsReset = partsReset + 1
+        End If
+    Next i
+    
+    Application.Calculate
+    Application.ScreenUpdating = True
+    
+    MsgBox "Reset Complete!" & vbCrLf & vbCrLf & _
+           "All " & partsReset & " parts now use Vendor A.", _
+           vbInformation, "Reset to Vendor A"
+End Sub
+
+
+Sub ShowVendorBreakdown()
+    '
+    ' Shows vendor distribution
+    '
+    
+    Dim ws As Worksheet
+    Dim lastRow As Long
+    Dim i As Long
+    Dim countA As Long, countB As Long, countC As Long
+    Dim vendor As String
+    Dim totalCost As Double
+    
+    Set ws = ThisWorkbook.Sheets("Product_LinearActuator")
+    lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
+    
+    countA = 0
+    countB = 0
+    countC = 0
+    
+    For i = 4 To lastRow
+        If ws.Cells(i, 1).Value <> "" And ws.Cells(i, 1).Value <> "Part_ID" Then
+            vendor = ws.Cells(i, 3).Value  ' Column C = Selected_Vendor
+            
+            If vendor = "Vendor_A" Then
+                countA = countA + 1
+            ElseIf vendor = "Vendor_B" Then
+                countB = countB + 1
+            ElseIf vendor = "Vendor_C" Then
+                countC = countC + 1
+            End If
+        End If
+    Next i
+    
+    Application.Calculate
+    totalCost = Application.WorksheetFunction.Sum(ws.Range("I4:I20"))  ' Column I = Total_Cost
+    
+    MsgBox "CURRENT VENDOR BREAKDOWN" & vbCrLf & vbCrLf & _
+           "Vendor A: " & countA & " parts" & vbCrLf & _
+           "Vendor B: " & countB & " parts" & vbCrLf & _
+           "Vendor C: " & countC & " parts" & vbCrLf & vbCrLf & _
+           "Total Parts: " & (countA + countB + countC) & vbCrLf & _
+           "Total Cost: $" & Format(totalCost, "#,##0.00"), _
+           vbInformation, "Vendor Breakdown"
+End Sub
+
+
+Sub HighlightExpensiveParts()
+    '
+    ' Highlights top 3 most expensive parts
+    '
+    
+    Dim ws As Worksheet
+    Dim lastRow As Long
+    Dim i As Long
+    Dim maxCost1 As Double, maxCost2 As Double, maxCost3 As Double
+    Dim maxRow1 As Long, maxRow2 As Long, maxRow3 As Long
+    Dim currentCost As Double
+    
+    Set ws = ThisWorkbook.Sheets("Product_LinearActuator")
+    lastRow = ws.Cells(ws.Rows.Count, "A").End(xlUp).Row
+    
+    ' Clear previous highlighting
+    ws.Range("A4:J" & lastRow).Interior.ColorIndex = xlNone
+    
+    maxCost1 = 0: maxCost2 = 0: maxCost3 = 0
+    maxRow1 = 0: maxRow2 = 0: maxRow3 = 0
+    
+    ' Find top 3
+    For i = 4 To lastRow
+        If ws.Cells(i, 1).Value <> "" And ws.Cells(i, 1).Value <> "Part_ID" Then
+            currentCost = ws.Cells(i, 9).Value  ' Column I = Total_Cost
+            
+            If IsNumeric(currentCost) Then
+                If currentCost > maxCost1 Then
+                    maxCost3 = maxCost2: maxRow3 = maxRow2
+                    maxCost2 = maxCost1: maxRow2 = maxRow1
+                    maxCost1 = currentCost: maxRow1 = i
+                ElseIf currentCost > maxCost2 Then
+                    maxCost3 = maxCost2: maxRow3 = maxRow2
+                    maxCost2 = currentCost: maxRow2 = i
+                ElseIf currentCost > maxCost3 Then
+                    maxCost3 = currentCost: maxRow3 = i
+                End If
+            End If
+        End If
+    Next i
+    
+    ' Highlight
+    If maxRow1 > 0 Then ws.Range("A" & maxRow1 & ":J" & maxRow1).Interior.Color = RGB(255, 199, 206)
+    If maxRow2 > 0 Then ws.Range("A" & maxRow2 & ":J" & maxRow2).Interior.Color = RGB(255, 235, 156)
+    If maxRow3 > 0 Then ws.Range("A" & maxRow3 & ":J" & maxRow3).Interior.Color = RGB(255, 242, 204)
+    
+    MsgBox "TOP 3 MOST EXPENSIVE PARTS" & vbCrLf & vbCrLf & _
+           "#1: " & ws.Cells(maxRow1, 2).Value & " - $" & Format(maxCost1, "#,##0.00") & vbCrLf & _
+           "#2: " & ws.Cells(maxRow2, 2).Value & " - $" & Format(maxCost2, "#,##0.00") & vbCrLf & _
+           "#3: " & ws.Cells(maxRow3, 2).Value & " - $" & Format(maxCost3, "#,##0.00") & vbCrLf & vbCrLf & _
+           "Highlighted in the sheet.", _
+           vbInformation, "Cost Analysis"
+End Sub
+
+
